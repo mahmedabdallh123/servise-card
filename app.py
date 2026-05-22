@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from base64 import b64decode
 import uuid
 
-# محاولة استيراد PyGithub (لرفع التعديلات)
+# محاولة استيراد PyGithub
 try:
     from github import Github
     GITHUB_AVAILABLE = True
@@ -18,47 +18,33 @@ except Exception:
     GITHUB_AVAILABLE = False
 
 # ===============================
-# ⚙ إعدادات التطبيق - يمكن تعديلها بسهولة
+# ⚙ إعدادات التطبيق
 # ===============================
 APP_CONFIG = {
-    # إعدادات التطبيق العامة
     "APP_TITLE": "CMMS - سيرفيس تحضيرات بيل يارن",
     "APP_ICON": "🏭",
-    
-    # إعدادات GitHub
     "REPO_NAME": "mahmedabdallh123/servise-card",
     "BRANCH": "main",
     "FILE_PATH": "l4.xlsx",
     "LOCAL_FILE": "l4.xlsx",
-    
-    # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
     "SESSION_DURATION_MINUTES": 15,
-    
-    # إعدادات الواجهة
     "CUSTOM_TABS": ["📊 فحص السيرفيس", "🛠 تعديل وإدارة البيانات"],
-    
-    # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
     "ALLOWED_IMAGE_TYPES": ["jpg", "jpeg", "png", "gif", "bmp"],
     "MAX_IMAGE_SIZE_MB": 5,
 }
 
-# ===============================
-# 🗂 إعدادات الملفات
-# ===============================
 USERS_FILE = "users.json"
 STATE_FILE = "state.json"
 NOTIFICATIONS_FILE = "notifications.json"
 SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
-
-# رابط GitHub التلقائي
 GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
 
 # -------------------------------
-# 🔔 دوال الإشعارات (للمسؤول فقط، بدون واجهة إدارة)
+# دوال الإشعارات (كما هي)
 # -------------------------------
 def load_notifications():
     if not os.path.exists(NOTIFICATIONS_FILE):
@@ -68,8 +54,7 @@ def load_notifications():
     try:
         with open(NOTIFICATIONS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:
-        st.error(f"❌ خطأ في تحميل الإشعارات: {e}")
+    except Exception:
         return []
 
 def save_notifications(notifications):
@@ -77,8 +62,7 @@ def save_notifications(notifications):
         with open(NOTIFICATIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(notifications, f, indent=4, ensure_ascii=False)
         return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حفظ الإشعارات: {e}")
+    except Exception:
         return False
 
 def add_notification(username, action, details, target_sheet=None, target_row=None):
@@ -98,7 +82,7 @@ def add_notification(username, action, details, target_sheet=None, target_row=No
     return new_notification
 
 # -------------------------------
-# 🧩 دوال مساعدة للصور
+# دوال مساعدة للصور
 # -------------------------------
 def setup_images_folder():
     if not os.path.exists(IMAGES_FOLDER):
@@ -113,11 +97,11 @@ def save_uploaded_images(uploaded_files):
     for uploaded_file in uploaded_files:
         file_extension = uploaded_file.name.split('.')[-1].lower()
         if file_extension not in APP_CONFIG["ALLOWED_IMAGE_TYPES"]:
-            st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن نوعه غير مدعوم")
+            st.warning(f"⚠ تم تجاهل {uploaded_file.name}")
             continue
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         if file_size_mb > APP_CONFIG["MAX_IMAGE_SIZE_MB"]:
-            st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن حجمه ({file_size_mb:.2f}MB) يتجاوز الحد المسموح")
+            st.warning(f"⚠ حجم {uploaded_file.name} كبير")
             continue
         unique_id = str(uuid.uuid4())[:8]
         original_name = uploaded_file.name.split('.')[0]
@@ -135,8 +119,8 @@ def delete_image_file(image_filename):
         if os.path.exists(file_path):
             os.remove(file_path)
             return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حذف الصورة {image_filename}: {e}")
+    except Exception:
+        return False
     return False
 
 def get_image_url(image_filename):
@@ -168,7 +152,7 @@ def display_images(image_filenames, caption="الصور المرفقة"):
                         st.write(f"📷 {image_filename} (غير موجود)")
 
 # -------------------------------
-# 🧩 دوال مساعدة للملفات والحالة
+# دوال المستخدمين والجلسات
 # -------------------------------
 def load_users():
     if not os.path.exists(USERS_FILE):
@@ -203,8 +187,7 @@ def load_users():
             if "created_at" not in user_data:
                 user_data["created_at"] = datetime.now().isoformat()
         return users
-    except Exception as e:
-        st.error(f"❌ خطأ في ملف users.json: {e}")
+    except Exception:
         return {"admin": {"password": "admin123", "role": "admin", "permissions": ["all"], "created_at": datetime.now().isoformat()}}
 
 def save_users(users):
@@ -212,8 +195,7 @@ def save_users(users):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)
         return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حفظ ملف users.json: {e}")
+    except Exception:
         return False
 
 def load_state():
@@ -264,9 +246,6 @@ def remaining_time(state, username):
     except:
         return None
 
-# -------------------------------
-# 🔐 تسجيل الخروج
-# -------------------------------
 def logout_action():
     state = load_state()
     username = st.session_state.get("username")
@@ -280,7 +259,7 @@ def logout_action():
     st.rerun()
 
 # -------------------------------
-# 🧠 واجهة تسجيل الدخول
+# واجهة تسجيل الدخول
 # -------------------------------
 def login_ui():
     users = load_users()
@@ -344,7 +323,7 @@ def login_ui():
         return True
 
 # -------------------------------
-# 🔄 طرق جلب الملف من GitHub
+# جلب الملف من GitHub
 # -------------------------------
 def fetch_from_github_requests():
     try:
@@ -352,10 +331,6 @@ def fetch_from_github_requests():
         response.raise_for_status()
         with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
             shutil.copyfileobj(response.raw, f)
-        try:
-            st.cache_data.clear()
-        except:
-            pass
         return True
     except Exception as e:
         st.error(f"⚠ فشل التحديث من GitHub: {e}")
@@ -374,19 +349,14 @@ def fetch_from_github_api():
         content = b64decode(file_content.content)
         with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
             f.write(content)
-        try:
-            st.cache_data.clear()
-        except:
-            pass
         return True
     except Exception as e:
         st.error(f"⚠ فشل تحميل الملف من GitHub: {e}")
         return False
 
 # -------------------------------
-# 📂 تحميل الشيتات (مخبأ)
+# تحميل البيانات (لا تخزين مؤقت)
 # -------------------------------
-@st.cache_data(show_spinner=False)
 def load_all_sheets():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return None
@@ -398,9 +368,9 @@ def load_all_sheets():
             df.columns = df.columns.astype(str).str.strip()
         return sheets
     except Exception as e:
+        st.error(f"❌ خطأ في قراءة الملف: {e}")
         return None
 
-@st.cache_data(show_spinner=False)
 def load_sheets_for_edit():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return None
@@ -412,10 +382,21 @@ def load_sheets_for_edit():
             df.columns = df.columns.astype(str).str.strip()
         return sheets
     except Exception as e:
+        st.error(f"❌ خطأ في قراءة الملف للتعديل: {e}")
+        return None
+
+def reload_all_data():
+    """إعادة تحميل البيانات لتبويب التعديل فقط"""
+    try:
+        sheets_edit = load_sheets_for_edit()
+        st.session_state['sheets_edit'] = sheets_edit
+        return sheets_edit
+    except Exception as e:
+        st.error(f"❌ خطأ في إعادة تحميل البيانات: {e}")
         return None
 
 # -------------------------------
-# 🔁 حفظ محلي + رفع على GitHub
+# حفظ ورفع الملف
 # -------------------------------
 def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit"):
     try:
@@ -428,10 +409,6 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
     except Exception as e:
         st.error(f"⚠ خطأ أثناء الحفظ المحلي: {e}")
         return None
-    try:
-        st.cache_data.clear()
-    except:
-        pass
     token = st.secrets.get("github", {}).get("token", None)
     if not token or not GITHUB_AVAILABLE:
         st.warning("⚠ لم يتم العثور على GitHub token. سيتم الحفظ محلياً فقط.")
@@ -446,14 +423,10 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
             repo.update_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, sha=contents.sha, branch=APP_CONFIG["BRANCH"])
             st.success(f"✅ تم الحفظ والرفع إلى GitHub بنجاح: {commit_message}")
             return load_sheets_for_edit()
-        except Exception as e:
-            try:
-                repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
-                st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
-                return load_sheets_for_edit()
-            except Exception as create_error:
-                st.error(f"❌ فشل إنشاء ملف جديد على GitHub: {create_error}")
-                return None
+        except Exception:
+            repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
+            st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
+            return load_sheets_for_edit()
     except Exception as e:
         st.error(f"❌ فشل الرفع إلى GitHub: {e}")
         return None
@@ -466,13 +439,14 @@ def auto_save_to_github(sheets_dict, operation_description):
     result = save_local_excel_and_push(sheets_dict, commit_message)
     if result is not None:
         st.success("✅ تم حفظ التغييرات تلقائياً في GitHub")
+        reload_all_data()  # تحديث نسخة التعديل
         return result
     else:
         st.error("❌ فشل الحفظ التلقائي")
         return sheets_dict
 
 # -------------------------------
-# 🧰 دوال مساعدة للنصوص والصلاحيات
+# دوال مساعدة للنصوص والصلاحيات
 # -------------------------------
 def normalize_name(s):
     if s is None: return ""
@@ -551,7 +525,7 @@ def get_user_permissions(user_role, user_permissions):
         return {"can_view": True, "can_edit": False, "can_manage_users": False, "can_see_tech_support": False, "can_export_data": False}
 
 # -------------------------------
-# 🖥 دالة فحص السيرفيس فقط
+# دالة فحص السيرفيس (تقرأ الملف مباشرة)
 # -------------------------------
 def find_sheet_by_name(all_sheets, sheet_name_pattern):
     found_sheets = []
@@ -562,10 +536,23 @@ def find_sheet_by_name(all_sheets, sheet_name_pattern):
             found_sheets.append(sheet_name)
     return found_sheets
 
-def check_service_status(card_num, current_tons, all_sheets):
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
+def check_service_status(card_num, current_tons):
+    """تقرأ ملف Excel مباشرة لضمان أحدث البيانات"""
+    # قراءة الملف مباشرة (بدون أي تخزين مؤقت)
+    if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
+        st.error("❌ الملف المحلي غير موجود.")
         return
+    try:
+        all_sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None)
+        if not all_sheets:
+            st.error("❌ لم يتم تحميل أي شيتات.")
+            return
+        for name, df in all_sheets.items():
+            df.columns = df.columns.astype(str).str.strip()
+    except Exception as e:
+        st.error(f"❌ خطأ في قراءة الملف: {e}")
+        return
+
     service_plan_sheets = find_sheet_by_name(all_sheets, "ServicePlan")
     if not service_plan_sheets:
         alternative_names = ["Service", "Services", "سيرفيس", "الخدمات", "خطط الخدمة"]
@@ -805,7 +792,8 @@ def show_service_statistics(service_stats, result_df):
                     chart_data = chart_data.nlargest(10, "مطلوبة")
                 st.bar_chart(chart_data.set_index("الخدمة"), height=400)
                 st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                st.progress(completion_rate / 100)
+                progress_value = min(max(completion_rate / 100, 0.0), 1.0)
+                st.progress(progress_value)
         else:
             st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
     with stat_tabs[2]:
@@ -824,7 +812,7 @@ def show_service_statistics(service_stats, result_df):
             st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
 
 # -------------------------------
-# 🖥 دوال تعديل البيانات (بدون إدارة مستخدمين)
+# دوال تعديل البيانات (بدون إدارة مستخدمين)
 # -------------------------------
 def edit_sheet_with_save_button(sheets_edit):
     st.subheader("✏ تعديل البيانات")
@@ -855,8 +843,8 @@ def edit_sheet_with_save_button(sheets_edit):
                 if new_sheets is not None:
                     sheets_edit = new_sheets
                     st.session_state.unsaved_changes[sheet_name] = False
+                    st.session_state['sheets_edit'] = sheets_edit
                     st.success(f"✅ تم حفظ التغييرات في شيت {sheet_name} بنجاح!")
-                    st.session_state.original_sheets[sheet_name] = edited_df.copy()
                     st.rerun()
                 else:
                     st.error("❌ فشل حفظ التغييرات!")
@@ -984,6 +972,7 @@ def add_new_sheet(sheets_edit):
         new_sheets = auto_save_to_github(sheets_edit, f"إضافة شيت جديد: {new_sheet_name}")
         if new_sheets is not None:
             sheets_edit = new_sheets
+            st.session_state['sheets_edit'] = sheets_edit
             st.success(f"✅ تم إنشاء الشيت '{new_sheet_name}' بنجاح!")
             st.info(f"📊 يحتوي الشيت على {len(column_names)} أعمدة و {num_initial_rows} صف")
             with st.expander("👁️ معاينة الشيت الجديد", expanded=True):
@@ -1072,6 +1061,7 @@ def add_new_event(sheets_edit):
         new_sheets = auto_save_to_github(sheets_edit, f"إضافة حدث جديد في {sheet_name}" + (f" مع {len(saved_images)} صورة" if saved_images else ""))
         if new_sheets is not None:
             sheets_edit = new_sheets
+            st.session_state['sheets_edit'] = sheets_edit
             st.success("✅ تم إضافة الحدث الجديد بنجاح!")
             with st.expander("📋 ملخص الحدث المضافة", expanded=True):
                 st.markdown(f"**رقم الماكينة:** {card_num}")
@@ -1185,6 +1175,7 @@ def edit_events_and_corrections(sheets_edit):
             new_sheets = auto_save_to_github(sheets_edit, f"تعديل حدث في {sheet_name} - الصف {row_index}" + (f" مع تحديث الصور" if all_images else ""))
             if new_sheets is not None:
                 sheets_edit = new_sheets
+                st.session_state['sheets_edit'] = sheets_edit
                 st.success("✅ تم حفظ التعديلات بنجاح!")
                 if all_images:
                     st.info(f"📷 العدد النهائي للصور: {len(all_images)}")
@@ -1196,10 +1187,20 @@ def edit_events_and_corrections(sheets_edit):
                 st.rerun()
 
 # ===============================
-# 🖥 الواجهة الرئيسية
+# الواجهة الرئيسية
 # ===============================
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 setup_images_folder()
+
+# تهيئة session_state لبيانات التعديل فقط
+if 'sheets_edit' not in st.session_state:
+    sheets_edit = load_sheets_for_edit()
+    st.session_state['sheets_edit'] = sheets_edit
+else:
+    if st.session_state.get('sheets_edit') is None:
+        st.session_state['sheets_edit'] = load_sheets_for_edit()
+
+sheets_edit = st.session_state['sheets_edit']
 
 with st.sidebar:
     st.header("👤 الجلسة")
@@ -1220,10 +1221,12 @@ with st.sidebar:
     st.write("🔧 أدوات:")
     if st.button("🔄 تحديث الملف من GitHub", key="refresh_github"):
         if fetch_from_github_requests():
+            st.session_state['sheets_edit'] = load_sheets_for_edit()
             st.rerun()
     if st.button("🗑 مسح الكاش", key="clear_cache"):
         try:
             st.cache_data.clear()
+            st.session_state['sheets_edit'] = load_sheets_for_edit()
             st.rerun()
         except Exception as e:
             st.error(f"❌ خطأ في مسح الكاش: {e}")
@@ -1249,8 +1252,6 @@ with st.sidebar:
     if st.button("🚪 تسجيل الخروج", key="logout_btn"):
         logout_action()
 
-all_sheets = load_all_sheets()
-sheets_edit = load_sheets_for_edit()
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
 
 username = st.session_state.get("username")
@@ -1263,7 +1264,7 @@ tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
 # Tab: فحص السيرفيس
 with tabs[0]:
     st.header("📊 فحص السيرفيس")
-    if all_sheets is None:
+    if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         st.warning("❗ الملف المحلي غير موجود. استخدم زر التحديث في الشريط الجانبي لتحميل الملف من GitHub.")
     else:
         col1, col2 = st.columns(2)
@@ -1272,16 +1273,13 @@ with tabs[0]:
         with col2:
             current_tons = st.number_input("عدد الأطنان الحالية:", min_value=0, step=100, key="current_tons_service")
         if st.button("عرض حالة السيرفيس", key="show_service"):
-            st.session_state["show_service_results"] = True
-        if st.session_state.get("show_service_results", False):
-            check_service_status(card_num, current_tons, all_sheets)
+            # نقرأ الملف مباشرة ونعرض النتائج (بدون تخزين النتائج في session_state)
+            check_service_status(card_num, current_tons)
 
-# Tab: تعديل وإدارة البيانات (للمحررين والمسؤولين فقط)
+# Tab: تعديل وإدارة البيانات
 if permissions["can_edit"]:
     with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
-        token_exists = bool(st.secrets.get("github", {}).get("token", None))
-        can_push = token_exists and GITHUB_AVAILABLE
         if sheets_edit is None:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
@@ -1295,6 +1293,7 @@ if permissions["can_edit"]:
                     st.info("💾 جاري حفظ جميع التغييرات...")
                     st.session_state["save_all_requested"] = False
                 sheets_edit = edit_sheet_with_save_button(sheets_edit)
+                st.session_state['sheets_edit'] = sheets_edit
             with tab2:
                 st.subheader("➕ إضافة صف جديد")
                 sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
@@ -1318,6 +1317,7 @@ if permissions["can_edit"]:
                         new_sheets = auto_save_to_github(sheets_edit, f"إضافة صف جديد في {sheet_name_add}")
                         if new_sheets is not None:
                             sheets_edit = new_sheets
+                            st.session_state['sheets_edit'] = sheets_edit
                             st.success("✅ تم إضافة الصف الجديد بنجاح!")
                             st.rerun()
                 with col_btn2:
@@ -1342,6 +1342,7 @@ if permissions["can_edit"]:
                             new_sheets = auto_save_to_github(sheets_edit, f"إضافة عمود جديد '{new_col_name}' إلى {sheet_name_col}")
                             if new_sheets is not None:
                                 sheets_edit = new_sheets
+                                st.session_state['sheets_edit'] = sheets_edit
                                 st.success("✅ تم إضافة العمود الجديد بنجاح!")
                                 st.rerun()
                         else:
