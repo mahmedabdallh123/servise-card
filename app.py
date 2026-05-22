@@ -536,60 +536,61 @@ def find_sheet_by_name(all_sheets, sheet_name_pattern):
             found_sheets.append(sheet_name)
     return found_sheets
 
-def check_service_status(card_num, current_tons):
-    """تقرأ ملف Excel مباشرة لضمان أحدث البيانات"""
-    # قراءة الملف مباشرة (بدون أي تخزين مؤقت)
-    if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
-        st.error("❌ الملف المحلي غير موجود.")
-        return
-    try:
-        all_sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None)
-        if not all_sheets:
-            st.error("❌ لم يتم تحميل أي شيتات.")
-            return
-        for name, df in all_sheets.items():
-            df.columns = df.columns.astype(str).str.strip()
-    except Exception as e:
-        st.error(f"❌ خطأ في قراءة الملف: {e}")
+# -------------------------------
+# 🖥 دالة فحص السيرفيس (النسخة المعدلة بالكامل)
+# -------------------------------
+def check_service_status(card_num, current_tons, all_sheets_param=None):
+    if all_sheets_param is None:
+        all_sheets_data = st.session_state.get('all_sheets')
+    else:
+        all_sheets_data = all_sheets_param
+
+    if not all_sheets_data:
+        st.error("❌ لم يتم تحميل أي شيتات.")
         return
 
-    service_plan_sheets = find_sheet_by_name(all_sheets, "ServicePlan")
+    # 1. البحث عن شيت الخدمات (ServicePlan)
+    service_plan_sheets = find_sheet_by_name(all_sheets_data, "ServicePlan")
     if not service_plan_sheets:
         alternative_names = ["Service", "Services", "سيرفيس", "الخدمات", "خطط الخدمة"]
         for name in alternative_names:
-            service_plan_sheets = find_sheet_by_name(all_sheets, name)
+            service_plan_sheets = find_sheet_by_name(all_sheets_data, name)
             if service_plan_sheets:
                 break
     if not service_plan_sheets:
         st.error("❌ لم يتم العثور على شيت الخدمات (ServicePlan أو ما شابه).")
         return
-    service_plan_df = all_sheets[service_plan_sheets[0]]
-    machine_service_sheets = [s for s in all_sheets.keys() if str(card_num) in s]
+
+    service_plan_df = all_sheets_data[service_plan_sheets[0]].copy()
+
+    # 2. البحث عن شيت الماكينة المحددة
+    machine_service_sheets = [s for s in all_sheets_data.keys() if str(card_num) in s]
     if not machine_service_sheets:
         st.warning(f"⚠ لم يتم العثور على شيت لرقم الماكينة {card_num}")
         return
-    card_df = all_sheets[machine_service_sheets[0]]
+    card_df = all_sheets_data[machine_service_sheets[0]].copy()
+
+    # 3. تجهيز أعمدة النطاق والخدمات في شيت الماكينة
     min_tone_cols = [col for col in card_df.columns if "min" in normalize_name(col) and "ton" in normalize_name(col)]
     max_tone_cols = [col for col in card_df.columns if "max" in normalize_name(col) and "ton" in normalize_name(col)]
-    services_df = card_df.copy()
-    if min_tone_cols and max_tone_cols:
-        min_col = min_tone_cols[0]
-        max_col = max_tone_cols[0]
-        services_df = services_df[(services_df[min_col].notna()) & (services_df[max_col].notna()) &
-                                  (services_df[min_col].astype(str).str.strip() != "") &
-                                  (services_df[max_col].astype(str).str.strip() != "")].copy()
-    st.subheader("⚙ نطاق العرض")
-    view_option = st.radio("اختر نطاق العرض:",
-                           ("الشريحة الحالية فقط", "كل الشرائح الأقل", "كل الشرائح الأعلى", "نطاق مخصص", "كل الشرائح"),
-                           horizontal=True, key=f"service_view_option_{card_num}")
-    min_range = st.session_state.get(f"service_min_range_{card_num}", max(0, current_tons - 500))
-    max_range = st.session_state.get(f"service_max_range_{card_num}", current_tons + 500)
-    if view_option == "نطاق مخصص":
-        col1, col2 = st.columns(2)
-        with col1:
-            min_range = st.number_input("من (طن):", min_value=0, step=100, value=min_range, key=f"service_min_range_{card_num}")
-        with col2:
-            max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key=f"service_max_range_{card_num}")
+    min_col = min_tone_cols[0] if min_tone_cols else None
+    max_col = max_tone_cols[0] if max_tone_cols else None
+
+    # تقسيم بيانات الماكينة: صفوف لها نطاق طن (خدمات) وأخرى بدون نطاق (أحداث/ملاحظات)
+    rows_with_range = pd.DataFrame()
+    rows_without_range = pd.DataFrame()
+    if min_col and max_col:
+        # تحويل الأعمدة إلى رقمية لتجنب الأخطاء
+        card_df[min_col] = pd.to_numeric(card_df[min_col], errors='coerce')
+        card_df[max_col] = pd.to_numeric(card_df[max_col], errors='coerce')
+        
+        mask_with_range = card_df[min_col].notna() & card_df[max_col].notna()
+        rows_with_range = card_df[mask_with_range].copy()
+        rows_without_range = card_df[~mask_with_range].copy()
+    else:
+        rows_without_range = card_df.copy()
+
+    # 4. تجهيز شيت خطة الخدمات
     service_min_cols = [col for col in service_plan_df.columns if "min" in normalize_name(col) and "ton" in normalize_name(col)]
     service_max_cols = [col for col in service_plan_df.columns if "max" in normalize_name(col) and "ton" in normalize_name(col)]
     if not service_min_cols or not service_max_cols:
@@ -597,55 +598,101 @@ def check_service_status(card_num, current_tons):
         return
     service_min_col = service_min_cols[0]
     service_max_col = service_max_cols[0]
+    
+    # تحويل أعمدة الخطة إلى أرقام
+    service_plan_df[service_min_col] = pd.to_numeric(service_plan_df[service_min_col], errors='coerce')
+    service_plan_df[service_max_col] = pd.to_numeric(service_plan_df[service_max_col], errors='coerce')
+    service_plan_df = service_plan_df.dropna(subset=[service_min_col, service_max_col])
+
+    service_cols_in_plan = [col for col in service_plan_df.columns if "service" in normalize_name(col) or "خدم" in normalize_name(col)]
+    service_col_in_plan = service_cols_in_plan[0] if service_cols_in_plan else "Service"
+
+    # 5. واجهة المستخدم لاختيار نطاق العرض
+    st.subheader("⚙ نطاق العرض")
+    view_option = st.radio("اختر نطاق العرض:",
+                           ("الشريحة الحالية فقط", "كل الشرائح الأقل", "كل الشرائح الأعلى", "نطاق مخصص", "كل الشرائح"),
+                           horizontal=True, key=f"service_view_option_{card_num}")
+    
+    # تحويل current_tons إلى رقم
+    try:
+        current_tons_num = float(current_tons)
+    except (ValueError, TypeError):
+        current_tons_num = 0
+        st.warning("⚠ لم يتم إدخال عدد أطنان صحيح، سيتم اعتباره صفراً.")
+
+    # تعريف min_range و max_range للاستخدام في حالة النطاق المخصص
+    min_range = st.session_state.get(f"service_min_range_{card_num}", max(0, current_tons_num - 500))
+    max_range = st.session_state.get(f"service_max_range_{card_num}", current_tons_num + 500)
+    if view_option == "نطاق مخصص":
+        col1, col2 = st.columns(2)
+        with col1:
+            min_range = st.number_input("من (طن):", min_value=0, step=100, value=int(min_range), key=f"service_min_range_{card_num}")
+        with col2:
+            max_range = st.number_input("إلى (طن):", min_value=int(min_range), step=100, value=int(max_range), key=f"service_max_range_{card_num}")
+
+    # 6. تحديد الشرائح المطلوبة من خطة الخدمات بناءً على الخيار المختار
     if view_option == "الشريحة الحالية فقط":
-        selected_slices = service_plan_df[(service_plan_df[service_min_col] <= current_tons) & (service_plan_df[service_max_col] >= current_tons)]
+        selected_slices = service_plan_df[(service_plan_df[service_min_col] <= current_tons_num) & (service_plan_df[service_max_col] >= current_tons_num)]
     elif view_option == "كل الشرائح الأقل":
-        selected_slices = service_plan_df[service_plan_df[service_max_col] <= current_tons]
+        selected_slices = service_plan_df[service_plan_df[service_max_col] <= current_tons_num]
     elif view_option == "كل الشرائح الأعلى":
-        selected_slices = service_plan_df[service_plan_df[service_min_col] >= current_tons]
+        selected_slices = service_plan_df[service_plan_df[service_min_col] >= current_tons_num]
     elif view_option == "نطاق مخصص":
         selected_slices = service_plan_df[(service_plan_df[service_min_col] >= min_range) & (service_plan_df[service_max_col] <= max_range)]
-    else:
+    else:  # كل الشرائح
         selected_slices = service_plan_df.copy()
+
     if selected_slices.empty:
         st.warning("⚠ لا توجد شرائح مطابقة حسب النطاق المحدد.")
-        return
+        # حتى لو لا توجد شرائح، يمكن عرض الصفوف التي ليس لها نطاق
+        if not rows_without_range.empty:
+            st.info("ℹ️ توجد أحداث أو ملاحظات بدون نطاق طن، سيتم عرضها أدناه.")
+        else:
+            return
+
+    # 7. تحليل النتائج
     all_results = []
     service_stats = {"service_counts": {}, "service_done_counts": {}, "total_needed_services": 0, "total_done_services": 0, "by_slice": {}}
-    service_cols = [col for col in service_plan_df.columns if "service" in normalize_name(col) or "خدم" in normalize_name(col)]
-    service_col = service_cols[0] if service_cols else "Service"
+
+    # 7.1 معالجة الشرائح المحددة
     for _, current_slice in selected_slices.iterrows():
         slice_min = current_slice[service_min_col]
         slice_max = current_slice[service_max_col]
         slice_key = f"{slice_min}-{slice_max}"
-        needed_service_raw = current_slice.get(service_col, "")
+        
+        needed_service_raw = current_slice.get(service_col_in_plan, "")
         needed_parts = split_needed_services(needed_service_raw)
         needed_norm = [normalize_name(p) for p in needed_parts]
+        
         service_stats["by_slice"][slice_key] = {"needed": needed_parts, "done": [], "not_done": [], "total_needed": len(needed_parts), "total_done": 0}
         for service in needed_parts:
             service_stats["service_counts"][service] = service_stats["service_counts"].get(service, 0) + 1
         service_stats["total_needed_services"] += len(needed_parts)
-        mask = (services_df.get(service_min_col, 0).fillna(0) <= slice_max) & (services_df.get(service_max_col, 0).fillna(0) >= slice_min)
-        matching_rows = services_df[mask]
+        
+        # البحث عن صفوف الماكينة التي تقع ضمن هذا النطاق
+        if min_col and max_col and not rows_with_range.empty:
+            mask = (rows_with_range[min_col] <= slice_max) & (rows_with_range[max_col] >= slice_min)
+            matching_rows = rows_with_range[mask]
+        else:
+            matching_rows = pd.DataFrame()
+        
         if not matching_rows.empty:
             for _, row in matching_rows.iterrows():
                 done_services_set = set()
-                metadata_columns = {"card", "Tones", "Date", "Other", "Event", "Correction", "Images",
+                # استخراج الخدمات المنفذة من الأعمدة غير الأساسية
+                metadata_columns = {min_col, max_col, "card", "Tones", "Date", "Other", "Event", "Correction", "Images",
                                     "Card", "TONES", "DATE", "OTHER", "EVENT", "CORRECTION", "IMAGES",
                                     "servised by", "Servised By", "Serviced by", "Service by",
                                     "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة",
                                     "صور", "الصور", "مرفقات", "المرفقات"}
-                if min_tone_cols:
-                    metadata_columns.add(min_tone_cols[0])
-                if max_tone_cols:
-                    metadata_columns.add(max_tone_cols[0])
-                all_columns = set(services_df.columns)
+                # إزالة القيم None من set
+                metadata_columns = {c for c in metadata_columns if c is not None}
+                all_columns = set(rows_with_range.columns)
                 service_columns = all_columns - metadata_columns
                 final_service_columns = set()
                 for col in service_columns:
                     col_normalized = normalize_name(col)
-                    metadata_normalized = {normalize_name(mc) for mc in metadata_columns}
-                    if col_normalized not in metadata_normalized:
+                    if not any(normalize_name(mc) == col_normalized for mc in metadata_columns):
                         final_service_columns.add(col)
                 for col in final_service_columns:
                     val = str(row.get(col, "")).strip()
@@ -654,23 +701,30 @@ def check_service_status(card_num, current_tons):
                             done_services_set.add(col)
                             service_stats["service_done_counts"][col] = service_stats["service_done_counts"].get(col, 0) + 1
                             service_stats["total_done_services"] += 1
+                
+                # استخراج البيانات للعرض
                 date_cols = [col for col in row.index if "date" in normalize_name(col) or "تاريخ" in normalize_name(col)]
                 date_col = date_cols[0] if date_cols else "Date"
                 current_date = str(row.get(date_col, "")).strip() if pd.notna(row.get(date_col)) else "-"
+                
                 tone_cols = [col for col in row.index if "ton" in normalize_name(col) and not ("min" in normalize_name(col) or "max" in normalize_name(col))]
                 tone_col = tone_cols[0] if tone_cols else "Tones"
                 current_tones = str(row.get(tone_col, "")).strip() if pd.notna(row.get(tone_col)) else "-"
+                
                 servised_by_value = get_servised_by_value(row)
                 images_value = get_images_value(row)
+                
                 done_services = sorted(list(done_services_set))
                 done_norm = [normalize_name(c) for c in done_services]
                 service_stats["by_slice"][slice_key]["done"].extend(done_services)
                 service_stats["by_slice"][slice_key]["total_done"] += len(done_services)
+                
                 not_done = []
                 for needed_part, needed_norm_part in zip(needed_parts, needed_norm):
                     if needed_norm_part not in done_norm:
                         not_done.append(needed_part)
                 service_stats["by_slice"][slice_key]["not_done"].extend(not_done)
+                
                 all_results.append({
                     "Card Number": card_num,
                     "Min_Tons": slice_min,
@@ -684,6 +738,7 @@ def check_service_status(card_num, current_tons):
                     "Images": images_value if images_value else "-"
                 })
         else:
+            # لا توجد صفوف مطابقة لهذه الشريحة
             all_results.append({
                 "Card Number": card_num,
                 "Min_Tons": slice_min,
@@ -697,11 +752,69 @@ def check_service_status(card_num, current_tons):
                 "Images": "-"
             })
             service_stats["by_slice"][slice_key]["not_done"] = needed_parts.copy()
+    
+    # 7.2 معالجة الصفوف التي ليس لها نطاق طن (الأحداث والملاحظات)
+    additional_results = []
+    if not rows_without_range.empty:
+        for _, row in rows_without_range.iterrows():
+            done_services_set = set()
+            metadata_columns = {"card", "Tones", "Date", "Other", "Event", "Correction", "Images",
+                                "Card", "TONES", "DATE", "OTHER", "EVENT", "CORRECTION", "IMAGES",
+                                "servised by", "Servised By", "Serviced by", "Service by",
+                                "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة",
+                                "صور", "الصور", "مرفقات", "المرفقات"}
+            if min_col:
+                metadata_columns.add(min_col)
+            if max_col:
+                metadata_columns.add(max_col)
+            metadata_columns = {c for c in metadata_columns if c is not None}
+            all_columns = set(rows_without_range.columns)
+            service_columns = all_columns - metadata_columns
+            final_service_columns = set()
+            for col in service_columns:
+                col_normalized = normalize_name(col)
+                if not any(normalize_name(mc) == col_normalized for mc in metadata_columns):
+                    final_service_columns.add(col)
+            for col in final_service_columns:
+                val = str(row.get(col, "")).strip()
+                if val and val.lower() not in ["nan", "none", "", "null", "0"]:
+                    if val.lower() not in ["no", "false", "not done", "لم تتم", "x", "-"]:
+                        done_services_set.add(col)
+                        # لا نضيفها إلى إحصائيات الخدمات المطلوبة لأنها ليست ضمن خطة
+            date_cols = [col for col in row.index if "date" in normalize_name(col) or "تاريخ" in normalize_name(col)]
+            date_col = date_cols[0] if date_cols else "Date"
+            current_date = str(row.get(date_col, "")).strip() if pd.notna(row.get(date_col)) else "-"
+            
+            tone_cols = [col for col in row.index if "ton" in normalize_name(col) and not ("min" in normalize_name(col) or "max" in normalize_name(col))]
+            tone_col = tone_cols[0] if tone_cols else "Tones"
+            current_tones = str(row.get(tone_col, "")).strip() if pd.notna(row.get(tone_col)) else "-"
+            
+            servised_by_value = get_servised_by_value(row)
+            images_value = get_images_value(row)
+            done_services = sorted(list(done_services_set))
+            
+            additional_results.append({
+                "Card Number": card_num,
+                "Min_Tons": "بدون نطاق",
+                "Max_Tons": "بدون نطاق",
+                "Service Needed": "(حدث/ملاحظة خارج خطة الخدمة)",
+                "Service Done": ", ".join(done_services) if done_services else "-",
+                "Service Didn't Done": "-",
+                "Tones": current_tones,
+                "Servised by": servised_by_value,
+                "Date": current_date,
+                "Images": images_value if images_value else "-"
+            })
+    
+    # دمج النتائج
+    all_results.extend(additional_results)
     result_df = pd.DataFrame(all_results).dropna(how="all").reset_index(drop=True)
+    
+    # 8. عرض النتائج والإحصائيات
     st.markdown("### 📋 نتائج فحص السيرفيس")
     if not result_df.empty:
         st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
-        show_service_statistics(service_stats, result_df)
+        show_service_statistics(service_stats, result_df, has_additional_rows=bool(additional_results))
         if "Images" in result_df.columns:
             for idx, row in result_df.iterrows():
                 images_value = row.get("Images", "")
@@ -714,29 +827,43 @@ def check_service_status(card_num, current_tons):
             st.download_button(label="💾 حفظ النتائج كـ Excel (للادمن فقط)", data=buffer.getvalue(),
                                file_name=f"Service_Report_Card{card_num}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        else:
-            st.info("⛔ صلاحية التصدير متاحة فقط للمسؤولين")
     else:
         st.info("ℹ️ لا توجد خدمات مسجلة لهذه الماكينة.")
 
-def show_service_statistics(service_stats, result_df):
+# -------------------------------
+# 📊 دالة عرض الإحصائيات (معدلة لدعم الصفوف الإضافية)
+# -------------------------------
+def show_service_statistics(service_stats, result_df, has_additional_rows=False):
     st.markdown("---")
     st.markdown("### 📊 الإحصائيات والنسب المئوية")
-    if service_stats["total_needed_services"] == 0:
+    if service_stats["total_needed_services"] == 0 and not has_additional_rows:
         st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد.")
         return
-    completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100 if service_stats["total_needed_services"] > 0 else 0
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(label="📈 نسبة الإنجاز العامة", value=f"{completion_rate:.1f}%", delta=f"{service_stats['total_done_services']}/{service_stats['total_needed_services']}")
-    with col2:
-        st.metric(label="🔢 عدد الخدمات المطلوبة", value=service_stats["total_needed_services"])
-    with col3:
-        st.metric(label="✅ الخدمات المنفذة", value=service_stats["total_done_services"])
-    with col4:
-        remaining = service_stats["total_needed_services"] - service_stats["total_done_services"]
-        st.metric(label="⏳ الخدمات المتبقية", value=remaining)
-    st.markdown("---")
+    
+    if service_stats["total_needed_services"] > 0:
+        completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(label="📈 نسبة الإنجاز العامة", value=f"{completion_rate:.1f}%", delta=f"{service_stats['total_done_services']}/{service_stats['total_needed_services']}")
+        with col2:
+            st.metric(label="🔢 عدد الخدمات المطلوبة", value=service_stats["total_needed_services"])
+        with col3:
+            st.metric(label="✅ الخدمات المنفذة", value=service_stats["total_done_services"])
+        with col4:
+            remaining = service_stats["total_needed_services"] - service_stats["total_done_services"]
+            st.metric(label="⏳ الخدمات المتبقية", value=remaining)
+        st.markdown("---")
+    else:
+        st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد، ولكن توجد أحداث أو ملاحظات خارج الخطة.")
+        st.markdown("---")
+    
+    if has_additional_rows:
+        st.info("📌 ملاحظة: يوجد صفوف في الجدول تحمل عبارة 'بدون نطاق' أو '(حدث/ملاحظة خارج خطة الخدمة)'، وهي أحداث أو ملاحظات ليس لها نطاق طن محدد ولا تدخل في إحصائيات الخدمات أعلاه.")
+    
+    # باقي الإحصائيات (توزيع الخدمات، حسب الشريحة) تبقى كما هي إذا كانت هناك خدمات مطلوبة
+    if service_stats["total_needed_services"] == 0:
+        return
+        
     stat_tabs = st.tabs(["📝 إحصائيات الخدمات", "📋 توزيع الخدمات", "📊 حسب الشريحة"])
     with stat_tabs[0]:
         st.markdown("#### 📝 إحصائيات مفصلة لكل خدمة")
@@ -752,50 +879,45 @@ def show_service_statistics(service_stats, result_df):
         if stat_data:
             stat_df = pd.DataFrame(stat_data)
             st.dataframe(stat_df, use_container_width=True, height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للخدمات.")
     with stat_tabs[1]:
         st.markdown("#### 📋 توزيع الخدمات")
-        if service_stats["service_counts"]:
-            try:
-                import plotly.express as px
-                plot_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    plot_data.append({"الخدمة": service, "النوع": "مطلوبة", "العدد": needed_count})
-                    plot_data.append({"الخدمة": service, "النوع": "منفذة", "العدد": done_count})
-                plot_df = pd.DataFrame(plot_data)
-                fig = px.bar(plot_df, x="الخدمة", y="العدد", color="النوع", barmode="group",
-                             title="توزيع الخدمات المطلوبة والمنفذة",
-                             color_discrete_map={"مطلوبة": "#FF6B6B", "منفذة": "#4ECDC4"})
-                fig.update_layout(xaxis_title="الخدمة", yaxis_title="العدد", showlegend=True, height=500)
-                st.plotly_chart(fig, use_container_width=True)
-                fig2 = px.pie(names=["✅ منفذة", "⏳ غير منفذة"],
-                              values=[service_stats["total_done_services"], service_stats["total_needed_services"] - service_stats["total_done_services"]],
-                              title="نسبة الإنجاز العامة", color_discrete_sequence=["#4ECDC4", "#FF6B6B"])
-                fig2.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig2, use_container_width=True)
-            except ImportError:
-                st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
-                dist_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
-                    dist_data.append({"الخدمة": service, "مطلوبة": needed_count, "منفذة": done_count, "نسبة": f"{completion_rate:.1f}%"})
-                if dist_data:
-                    dist_df = pd.DataFrame(dist_data).sort_values("نسبة", ascending=False)
-                    st.dataframe(dist_df, use_container_width=True, height=300)
-                chart_data = pd.DataFrame({"الخدمة": list(service_stats["service_counts"].keys()),
-                                           "مطلوبة": list(service_stats["service_counts"].values()),
-                                           "منفذة": [service_stats["service_done_counts"].get(service, 0) for service in service_stats["service_counts"].keys()]})
-                if len(chart_data) > 10:
-                    chart_data = chart_data.nlargest(10, "مطلوبة")
-                st.bar_chart(chart_data.set_index("الخدمة"), height=400)
-                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                progress_value = min(max(completion_rate / 100, 0.0), 1.0)
-                st.progress(progress_value)
-        else:
-            st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
+        try:
+            import plotly.express as px
+            plot_data = []
+            for service, needed_count in service_stats["service_counts"].items():
+                done_count = service_stats["service_done_counts"].get(service, 0)
+                plot_data.append({"الخدمة": service, "النوع": "مطلوبة", "العدد": needed_count})
+                plot_data.append({"الخدمة": service, "النوع": "منفذة", "العدد": done_count})
+            plot_df = pd.DataFrame(plot_data)
+            fig = px.bar(plot_df, x="الخدمة", y="العدد", color="النوع", barmode="group",
+                         title="توزيع الخدمات المطلوبة والمنفذة",
+                         color_discrete_map={"مطلوبة": "#FF6B6B", "منفذة": "#4ECDC4"})
+            fig.update_layout(xaxis_title="الخدمة", yaxis_title="العدد", showlegend=True, height=500)
+            st.plotly_chart(fig, use_container_width=True)
+            fig2 = px.pie(names=["✅ منفذة", "⏳ غير منفذة"],
+                          values=[service_stats["total_done_services"], service_stats["total_needed_services"] - service_stats["total_done_services"]],
+                          title="نسبة الإنجاز العامة", color_discrete_sequence=["#4ECDC4", "#FF6B6B"])
+            fig2.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig2, use_container_width=True)
+        except ImportError:
+            st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة")
+            dist_data = []
+            for service, needed_count in service_stats["service_counts"].items():
+                done_count = service_stats["service_done_counts"].get(service, 0)
+                completion_rate = (done_count / needed_count * 100) if needed_count > 0 else 0
+                dist_data.append({"الخدمة": service, "مطلوبة": needed_count, "منفذة": done_count, "نسبة": f"{completion_rate:.1f}%"})
+            if dist_data:
+                dist_df = pd.DataFrame(dist_data).sort_values("نسبة", ascending=False)
+                st.dataframe(dist_df, use_container_width=True, height=300)
+            chart_data = pd.DataFrame({"الخدمة": list(service_stats["service_counts"].keys()),
+                                       "مطلوبة": list(service_stats["service_counts"].values()),
+                                       "منفذة": [service_stats["service_done_counts"].get(service, 0) for service in service_stats["service_counts"].keys()]})
+            if len(chart_data) > 10:
+                chart_data = chart_data.nlargest(10, "مطلوبة")
+            st.bar_chart(chart_data.set_index("الخدمة"), height=400)
+            st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
+            progress_value = min(max(completion_rate / 100, 0.0), 1.0)
+            st.progress(progress_value)
     with stat_tabs[2]:
         st.markdown("#### 📊 الإحصائيات حسب الشريحة")
         slice_stats_data = []
@@ -808,9 +930,6 @@ def show_service_statistics(service_stats, result_df):
         if slice_stats_data:
             slice_stats_df = pd.DataFrame(slice_stats_data)
             st.dataframe(slice_stats_df, use_container_width=True, height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
-
 # -------------------------------
 # دوال تعديل البيانات (بدون إدارة مستخدمين)
 # -------------------------------
