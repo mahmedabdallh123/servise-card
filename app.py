@@ -33,7 +33,7 @@ APP_CONFIG = {
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 2,
-    "SESSION_DURATION_MINUTES": 1,
+    "SESSION_DURATION_MINUTES": 15,
     
     # إعدادات الواجهة
     "CUSTOM_TABS": ["📊 فحص السيرفيس", "🛠 تعديل وإدارة البيانات"],
