@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timedelta
 from base64 import b64decode
 import uuid
+import time
 
 # محاولة استيراد PyGithub (لرفع التعديلات)
 try:
@@ -22,7 +23,7 @@ except Exception:
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "CMMS -سيرفيس تحضيرات بيل يارن 1",
+    "APP_TITLE": "CMMS -سيرفيس تحضيرات بيل يارن 11",
     "APP_ICON": "🏭",
     
     # إعدادات GitHub
@@ -37,7 +38,7 @@ APP_CONFIG = {
     
     # إعدادات الواجهة
     "SHOW_TECH_SUPPORT_TO_ALL": False,
-    "CUSTOM_TABS": ["📊 فحص السيرفيس", "🛠 تعديل وإدارة البيانات"],
+    "CUSTOM_TABS": ["📊 فحص السيرفيس", "🛠 تعديل وإدارة البيانات", "🛠 الصيانة الوقائية"],
     
     # إعدادات الصور
     "IMAGES_FOLDER": "event_images",
@@ -64,7 +65,6 @@ def setup_images_folder():
     """إنشاء وإعداد مجلد الصور"""
     if not os.path.exists(IMAGES_FOLDER):
         os.makedirs(IMAGES_FOLDER)
-        # إنشاء ملف .gitkeep لجعل المجلد فارغاً في GitHub
         with open(os.path.join(IMAGES_FOLDER, ".gitkeep"), "w") as f:
             pass
         st.info(f"📁 تم إنشاء مجلد الصور: {IMAGES_FOLDER}")
@@ -76,25 +76,21 @@ def save_uploaded_images(uploaded_files):
     
     saved_files = []
     for uploaded_file in uploaded_files:
-        # التحقق من نوع الملف
         file_extension = uploaded_file.name.split('.')[-1].lower()
         if file_extension not in APP_CONFIG["ALLOWED_IMAGE_TYPES"]:
             st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن نوعه غير مدعوم")
             continue
         
-        # التحقق من حجم الملف
         file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
         if file_size_mb > APP_CONFIG["MAX_IMAGE_SIZE_MB"]:
             st.warning(f"⚠ تم تجاهل الملف {uploaded_file.name} لأن حجمه ({file_size_mb:.2f}MB) يتجاوز الحد المسموح ({APP_CONFIG['MAX_IMAGE_SIZE_MB']}MB)")
             continue
         
-        # إنشاء اسم فريد للملف
         unique_id = str(uuid.uuid4())[:8]
         original_name = uploaded_file.name.split('.')[0]
         safe_name = re.sub(r'[^\w\-_]', '_', original_name)
         new_filename = f"{safe_name}_{unique_id}.{file_extension}"
         
-        # حفظ الملف
         file_path = os.path.join(IMAGES_FOLDER, new_filename)
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -104,38 +100,29 @@ def save_uploaded_images(uploaded_files):
     return saved_files
 
 def delete_image_file(image_filename):
-    """حذف ملف صورة"""
     try:
         file_path = os.path.join(IMAGES_FOLDER, image_filename)
         if os.path.exists(file_path):
             os.remove(file_path)
             return True
-    except Exception as e:
-        st.error(f"❌ خطأ في حذف الصورة {image_filename}: {e}")
+    except Exception:
+        pass
     return False
 
 def get_image_url(image_filename):
-    """الحصول على رابط الصورة للعرض"""
     if not image_filename:
         return None
-    
     file_path = os.path.join(IMAGES_FOLDER, image_filename)
     if os.path.exists(file_path):
-        # في Streamlit Cloud، نستخدم absolute path
         return file_path
     return None
 
 def display_images(image_filenames, caption="الصور المرفقة"):
-    """عرض الصور في واجهة المستخدم"""
     if not image_filenames:
         return
-    
     st.markdown(f"**{caption}:**")
-    
-    # تقسيم الصور إلى أعمدة
     images_per_row = 3
     images = image_filenames.split(',') if isinstance(image_filenames, str) else image_filenames
-    
     for i in range(0, len(images), images_per_row):
         cols = st.columns(images_per_row)
         for j in range(images_per_row):
@@ -156,9 +143,7 @@ def display_images(image_filenames, caption="الصور المرفقة"):
 # 🧩 دوال مساعدة للملفات والحالة
 # -------------------------------
 def load_users():
-    """تحميل بيانات المستخدمين من ملف JSON - نسخة محسنة"""
     if not os.path.exists(USERS_FILE):
-        # إنشاء مستخدمين افتراضيين مع الصلاحيات المطلوبة
         default_users = {
             "admin": {
                 "password": "admin123", 
@@ -175,7 +160,6 @@ def load_users():
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
         
-        # التأكد من أن الملف يحتوي على المستخدم admin الأساسي
         if "admin" not in users:
             users["admin"] = {
                 "password": "admin123", 
@@ -183,11 +167,9 @@ def load_users():
                 "created_at": datetime.now().isoformat(),
                 "permissions": ["all"]
             }
-            # حفظ الإضافة مباشرة
             with open(USERS_FILE, "w", encoding="utf-8") as f:
                 json.dump(users, f, indent=4, ensure_ascii=False)
         
-        # التأكد من وجود جميع الحقول المطلوبة لكل مستخدم
         for username, user_data in users.items():
             if "role" not in user_data:
                 if username == "admin":
@@ -208,14 +190,12 @@ def load_users():
             if "created_at" not in user_data:
                 user_data["created_at"] = datetime.now().isoformat()
         
-        # حفظ أي تحديثات
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)
         
         return users
     except Exception as e:
         st.error(f"❌ خطأ في ملف users.json: {e}")
-        # إرجاع المستخدمين الافتراضيين في حالة الخطأ
         return {
             "admin": {
                 "password": "admin123", 
@@ -226,7 +206,6 @@ def load_users():
         }
 
 def save_users(users):
-    """حفظ بيانات المستخدمين إلى ملف JSON"""
     try:
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)
@@ -283,9 +262,6 @@ def remaining_time(state, username):
     except:
         return None
 
-# -------------------------------
-# 🔐 تسجيل الخروج
-# -------------------------------
 def logout_action():
     state = load_state()
     username = st.session_state.get("username")
@@ -298,9 +274,6 @@ def logout_action():
         st.session_state.pop(k, None)
     st.rerun()
 
-# -------------------------------
-# 🧠 واجهة تسجيل الدخول
-# -------------------------------
 def login_ui():
     users = load_users()
     state = cleanup_sessions(load_state())
@@ -312,7 +285,6 @@ def login_ui():
 
     st.title(f"{APP_CONFIG['APP_ICON']} تسجيل الدخول - {APP_CONFIG['APP_TITLE']}")
 
-    # تحميل قائمة المستخدمين مباشرة من الملف
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             current_users = json.load(f)
@@ -320,7 +292,6 @@ def login_ui():
     except:
         user_list = list(users.keys())
 
-    # اختيار المستخدم
     username_input = st.selectbox("👤 اختر المستخدم", user_list)
     password = st.text_input("🔑 كلمة المرور", type="password")
 
@@ -330,9 +301,7 @@ def login_ui():
 
     if not st.session_state.logged_in:
         if st.button("تسجيل الدخول"):
-            # تحميل المستخدمين من جديد للتأكد من أحدث بيانات
             current_users = load_users()
-            
             if username_input in current_users and current_users[username_input]["password"] == password:
                 if username_input == "admin":
                     pass
@@ -371,17 +340,12 @@ def login_ui():
             logout_action()
         return True
 
-# -------------------------------
-# 🔄 طرق جلب الملف من GitHub
-# -------------------------------
 def fetch_from_github_requests():
-    """تحميل بإستخدام رابط RAW (requests)"""
     try:
         response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
         response.raise_for_status()
         with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
             shutil.copyfileobj(response.raw, f)
-        # امسح الكاش
         try:
             st.cache_data.clear()
         except:
@@ -392,10 +356,8 @@ def fetch_from_github_requests():
         return False
 
 def fetch_from_github_api():
-    """تحميل عبر GitHub API (باستخدام PyGithub token في secrets)"""
     if not GITHUB_AVAILABLE:
         return fetch_from_github_requests()
-    
     try:
         token = st.secrets.get("github", {}).get("token", None)
         if not token:
@@ -416,58 +378,35 @@ def fetch_from_github_api():
         st.error(f"⚠ فشل تحميل الملف من GitHub: {e}")
         return False
 
-# -------------------------------
-# 📂 تحميل الشيتات (مخبأ) - معدل لقراءة جميع الشيتات
-# -------------------------------
 @st.cache_data(show_spinner=False)
 def load_all_sheets():
-    """تحميل جميع الشيتات من ملف Excel"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return None
-    
     try:
-        # قراءة جميع الشيتات
         sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None)
-        
         if not sheets:
             return None
-        
-        # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
-        
         return sheets
     except Exception as e:
         return None
 
-# نسخة مع dtype=object لواجهة التحرير
 @st.cache_data(show_spinner=False)
 def load_sheets_for_edit():
-    """تحميل جميع الشيتات للتحرير"""
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
         return None
-    
     try:
-        # قراءة جميع الشيتات مع dtype=object للحفاظ على تنسيق البيانات
         sheets = pd.read_excel(APP_CONFIG["LOCAL_FILE"], sheet_name=None, dtype=object)
-        
         if not sheets:
             return None
-        
-        # تنظيف أسماء الأعمدة لكل شيت
         for name, df in sheets.items():
             df.columns = df.columns.astype(str).str.strip()
-        
         return sheets
     except Exception as e:
         return None
 
-# -------------------------------
-# 🔁 حفظ محلي + رفع على GitHub + مسح الكاش + إعادة تحميل
-# -------------------------------
 def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit"):
-    """دالة محسنة للحفظ التلقائي المحلي والرفع إلى GitHub"""
-    # احفظ محلياً
     try:
         with pd.ExcelWriter(APP_CONFIG["LOCAL_FILE"], engine="openpyxl") as writer:
             for name, sh in sheets_dict.items():
@@ -479,13 +418,11 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
         st.error(f"⚠ خطأ أثناء الحفظ المحلي: {e}")
         return None
 
-    # امسح الكاش
     try:
         st.cache_data.clear()
     except:
         pass
 
-    # حاول الرفع عبر PyGithub token في secrets
     token = st.secrets.get("github", {}).get("token", None)
     if not token:
         st.warning("⚠ لم يتم العثور على GitHub token. سيتم الحفظ محلياً فقط.")
@@ -507,7 +444,6 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
             st.success(f"✅ تم الحفظ والرفع إلى GitHub بنجاح: {commit_message}")
             return load_sheets_for_edit()
         except Exception as e:
-            # حاول رفع كملف جديد أو إنشاء
             try:
                 result = repo.create_file(path=APP_CONFIG["FILE_PATH"], message=commit_message, content=content, branch=APP_CONFIG["BRANCH"])
                 st.success(f"✅ تم إنشاء ملف جديد على GitHub: {commit_message}")
@@ -521,10 +457,8 @@ def save_local_excel_and_push(sheets_dict, commit_message="Update from Streamlit
         return None
 
 def auto_save_to_github(sheets_dict, operation_description):
-    """دالة الحفظ التلقائي المحسنة"""
     username = st.session_state.get("username", "unknown")
     commit_message = f"{operation_description} by {username} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    
     result = save_local_excel_and_push(sheets_dict, commit_message)
     if result is not None:
         st.success("✅ تم حفظ التغييرات تلقائياً في GitHub")
@@ -533,9 +467,6 @@ def auto_save_to_github(sheets_dict, operation_description):
         st.error("❌ فشل الحفظ التلقائي")
         return sheets_dict
 
-# -------------------------------
-# 🧰 دوال مساعدة للمعالجة والنصوص
-# -------------------------------
 def normalize_name(s):
     if s is None: return ""
     s = str(s).replace("\n", "+")
@@ -568,8 +499,6 @@ def style_table(row):
     return [highlight_cell(row[col], col) for col in row.index]
 
 def get_user_permissions(user_role, user_permissions):
-    """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
-    # إذا كان الدور admin، يعطى جميع الصلاحيات
     if user_role == "admin":
         return {
             "can_view": True,
@@ -577,7 +506,6 @@ def get_user_permissions(user_role, user_permissions):
             "can_manage_users": False,
             "can_see_tech_support": False
         }
-    # إذا كان الدور editor
     elif user_role == "editor":
         return {
             "can_view": True,
@@ -585,7 +513,6 @@ def get_user_permissions(user_role, user_permissions):
             "can_manage_users": False,
             "can_see_tech_support": False
         }
-    # إذا كان الدور viewer أو أي دور آخر
     else:
         return {
             "can_view": "view" in user_permissions or "edit" in user_permissions or "all" in user_permissions,
@@ -595,7 +522,6 @@ def get_user_permissions(user_role, user_permissions):
         }
 
 def get_servised_by_value(row):
-    """استخراج قيمة فني الخدمة من الصف"""
     servised_columns = [
         "Servised by", "SERVISED BY", "servised by", "Servised By",
         "Serviced by", "Service by", "Serviced By", "Service By",
@@ -615,7 +541,6 @@ def get_servised_by_value(row):
     return "-"
 
 def get_images_value(row):
-    """استخراج قيمة الصور من الصف"""
     images_columns = [
         "Images", "images", "Pictures", "pictures", "Attachments", "attachments",
         "صور", "الصور", "مرفقات", "المرفقات", "صور الحدث"
@@ -634,380 +559,399 @@ def get_images_value(row):
     return ""
 
 # -------------------------------
-# 🖥 دالة فحص السيرفيس فقط - من الشيتات الجديدة
+# 🆕 دوال الصيانة الوقائية الجديدة
 # -------------------------------
-def check_service_status(card_num, current_tons, all_sheets):
-    """فحص حالة السيرفيس فقط"""
-    if not all_sheets:
-        st.error("❌ لم يتم تحميل أي شيتات.")
-        return
+
+def initialize_machine_data_sheet(sheets_edit):
+    """إنشاء ورقة MachineData إذا لم تكن موجودة"""
+    if "MachineData" not in sheets_edit:
+        df = pd.DataFrame(columns=[
+            "Card_Number", "Current_Tons", "Production_Speed_tons_per_hour",
+            "Last_Update", "Last_Tons_Recorded"
+        ])
+        sheets_edit["MachineData"] = df
+        sheets_edit = auto_save_to_github(sheets_edit, "تهيئة ورقة MachineData")
+    return sheets_edit
+
+def initialize_service_log_sheet(sheets_edit):
+    """إنشاء ورقة ServiceLog إذا لم تكن موجودة"""
+    if "ServiceLog" not in sheets_edit:
+        df = pd.DataFrame(columns=[
+            "Card_Number", "Slice_Min_Tons", "Slice_Max_Tons", 
+            "Service_Name", "Execution_Date", "Performed_By", "Notes"
+        ])
+        sheets_edit["ServiceLog"] = df
+        sheets_edit = auto_save_to_github(sheets_edit, "تهيئة ورقة ServiceLog")
+    return sheets_edit
+
+def get_all_machine_numbers(sheets_edit):
+    """استخراج أرقام الماكينات من شيتات CardX_Services أو من MachineData"""
+    machine_numbers = set()
+    # أولاً من MachineData
+    if "MachineData" in sheets_edit:
+        md = sheets_edit["MachineData"]
+        if not md.empty and "Card_Number" in md.columns:
+            machine_numbers.update(md["Card_Number"].dropna().astype(int).tolist())
+    # ثم من شيتات CardX_Services
+    for sheet_name in sheets_edit.keys():
+        if sheet_name.startswith("Card") and "_Services" in sheet_name:
+            try:
+                num = int(sheet_name.split("_")[0].replace("Card", ""))
+                machine_numbers.add(num)
+            except:
+                pass
+    return sorted(machine_numbers)
+
+def get_machine_data(sheets_edit, card_num):
+    """استرجاع بيانات الماكينة من MachineData (إن وجدت) أو إنشاء سجل جديد"""
+    if "MachineData" not in sheets_edit:
+        sheets_edit = initialize_machine_data_sheet(sheets_edit)
+    df = sheets_edit["MachineData"]
+    if df.empty or "Card_Number" not in df.columns:
+        # إنشاء سجل جديد
+        new_row = pd.DataFrame([{
+            "Card_Number": card_num,
+            "Current_Tons": 0.0,
+            "Production_Speed_tons_per_hour": 0.08,  # 80 كجم = 0.08 طن/ساعة افتراضياً
+            "Last_Update": datetime.now(),
+            "Last_Tons_Recorded": 0.0
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        sheets_edit["MachineData"] = df
+        sheets_edit = auto_save_to_github(sheets_edit, f"إنشاء بيانات ماكينة {card_num}")
+        return sheets_edit, new_row.iloc[0].to_dict()
     
-    if "ServicePlan" not in all_sheets:
-        st.error("❌ الملف لا يحتوي على شيت ServicePlan.")
-        return
-    
-    service_plan_df = all_sheets["ServicePlan"]
-    card_services_sheet_name = f"Card{card_num}_Services"
-    
-    if card_services_sheet_name not in all_sheets:
-        card_old_sheet_name = f"Card{card_num}"
-        if card_old_sheet_name in all_sheets:
-            card_df = all_sheets[card_old_sheet_name]
-            services_df = card_df[
-                (card_df.get("Min_Tones", pd.NA).notna()) & 
-                (card_df.get("Max_Tones", pd.NA).notna()) &
-                (card_df.get("Min_Tones", "") != "") & 
-                (card_df.get("Max_Tones", "") != "")
-            ].copy()
-        else:
-            st.warning(f"⚠ لا يوجد شيت باسم {card_services_sheet_name} أو {card_old_sheet_name}")
-            return
+    mask = df["Card_Number"] == card_num
+    if mask.any():
+        return sheets_edit, df[mask].iloc[0].to_dict()
     else:
-        card_df = all_sheets[card_services_sheet_name]
-        services_df = card_df.copy()
+        new_row = pd.DataFrame([{
+            "Card_Number": card_num,
+            "Current_Tons": 0.0,
+            "Production_Speed_tons_per_hour": 0.08,
+            "Last_Update": datetime.now(),
+            "Last_Tons_Recorded": 0.0
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        sheets_edit["MachineData"] = df
+        sheets_edit = auto_save_to_github(sheets_edit, f"إضافة ماكينة {card_num}")
+        return sheets_edit, new_row.iloc[0].to_dict()
 
-    st.subheader("⚙ نطاق العرض")
-    view_option = st.radio(
-        "اختر نطاق العرض:",
-        ("الشريحة الحالية فقط", "كل الشرائح الأقل", "كل الشرائح الأعلى", "نطاق مخصص", "كل الشرائح"),
-        horizontal=True,
-        key=f"service_view_option_{card_num}"
-    )
-
-    min_range = st.session_state.get(f"service_min_range_{card_num}", max(0, current_tons - 500))
-    max_range = st.session_state.get(f"service_max_range_{card_num}", current_tons + 500)
-    if view_option == "نطاق مخصص":
-        col1, col2 = st.columns(2)
-        with col1:
-            min_range = st.number_input("من (طن):", min_value=0, step=100, value=min_range, key=f"service_min_range_{card_num}")
-        with col2:
-            max_range = st.number_input("إلى (طن):", min_value=min_range, step=100, value=max_range, key=f"service_max_range_{card_num}")
-
-    if view_option == "الشريحة الحالية فقط":
-        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] <= current_tons) & (service_plan_df["Max_Tones"] >= current_tons)]
-    elif view_option == "كل الشرائح الأقل":
-        selected_slices = service_plan_df[service_plan_df["Max_Tones"] <= current_tons]
-    elif view_option == "كل الشرائح الأعلى":
-        selected_slices = service_plan_df[service_plan_df["Min_Tones"] >= current_tons]
-    elif view_option == "نطاق مخصص":
-        selected_slices = service_plan_df[(service_plan_df["Min_Tones"] >= min_range) & (service_plan_df["Max_Tones"] <= max_range)]
-    else:
-        selected_slices = service_plan_df.copy()
-
-    if selected_slices.empty:
-        st.warning("⚠ لا توجد شرائح مطابقة حسب النطاق المحدد.")
-        return
-
-    all_results = []
-    service_stats = {
-        "service_counts": {},
-        "service_done_counts": {},
-        "total_needed_services": 0,
-        "total_done_services": 0,
-        "by_slice": {}
-    }
+def update_machine_tons(sheets_edit, card_num, new_tons, performed_by=None):
+    """تحديث الأطنان الحالية للماكينة مع تسجيل الخدمات المستحقة تلقائياً"""
+    if "MachineData" not in sheets_edit:
+        sheets_edit = initialize_machine_data_sheet(sheets_edit)
+    df = sheets_edit["MachineData"]
+    mask = df["Card_Number"] == card_num
+    if not mask.any():
+        # إنشاء سجل جديد
+        new_row = pd.DataFrame([{
+            "Card_Number": card_num,
+            "Current_Tons": new_tons,
+            "Production_Speed_tons_per_hour": 0.08,
+            "Last_Update": datetime.now(),
+            "Last_Tons_Recorded": new_tons
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        sheets_edit["MachineData"] = df
+        sheets_edit = auto_save_to_github(sheets_edit, f"تحديث أطنان ماكينة {card_num} إلى {new_tons}")
+        return sheets_edit
     
-    for _, current_slice in selected_slices.iterrows():
-        slice_min = current_slice["Min_Tones"]
-        slice_max = current_slice["Max_Tones"]
-        slice_key = f"{slice_min}-{slice_max}"
-        
-        needed_service_raw = current_slice.get("Service", "")
-        needed_parts = split_needed_services(needed_service_raw)
-        needed_norm = [normalize_name(p) for p in needed_parts]
-        
-        service_stats["by_slice"][slice_key] = {
-            "needed": needed_parts,
-            "done": [],
-            "not_done": [],
-            "total_needed": len(needed_parts),
-            "total_done": 0
-        }
-        
-        for service in needed_parts:
-            service_stats["service_counts"][service] = service_stats["service_counts"].get(service, 0) + 1
-        service_stats["total_needed_services"] += len(needed_parts)
-
-        if "Min_Tones" in services_df.columns and "Max_Tones" in services_df.columns:
-            mask = (services_df["Min_Tones"].fillna(0) <= slice_max) & (services_df["Max_Tones"].fillna(0) >= slice_min)
-        elif "Min_Tones" in services_df.columns:
-            mask = (services_df["Min_Tones"].fillna(0) <= slice_max) & (services_df["Min_Tones"].fillna(0) >= slice_min)
-        elif "Max_Tones" in services_df.columns:
-            mask = (services_df["Max_Tones"].fillna(0) <= slice_max) & (services_df["Max_Tones"].fillna(0) >= slice_min)
-        else:
-            if "Tones" in services_df.columns:
-                mask = services_df["Tones"].notna()
-            else:
-                mask = pd.Series([True] * len(services_df), index=services_df.index)
-        
-        matching_rows = services_df[mask]
-
-        if not matching_rows.empty:
-            for _, row in matching_rows.iterrows():
-                done_services_set = set()
-                
-                metadata_columns = {
-                    "card", "Tones", "Min_Tones", "Max_Tones", "Date", 
-                    "Other", "Servised by", "Event", "Correction", "Images",
-                    "Card", "TONES", "MIN_TONES", "MAX_TONES", "DATE",
-                    "OTHER", "EVENT", "CORRECTION", "SERVISED BY", "IMAGES",
-                    "servised by", "Servised By", 
-                    "Serviced by", "Service by", "Serviced By", "Service By",
-                    "خدم بواسطة", "تم الخدمة بواسطة", "فني الخدمة",
-                    "صور", "الصور", "مرفقات", "المرفقات"
-                }
-                
-                all_columns = set(services_df.columns)
-                service_columns = all_columns - metadata_columns
-                
-                final_service_columns = set()
-                for col in service_columns:
-                    col_normalized = normalize_name(col)
-                    metadata_normalized = {normalize_name(mc) for mc in metadata_columns}
-                    if col_normalized not in metadata_normalized:
-                        final_service_columns.add(col)
-                
-                for col in final_service_columns:
-                    val = str(row.get(col, "")).strip()
-                    if val and val.lower() not in ["nan", "none", "", "null", "0"]:
-                        if val.lower() not in ["no", "false", "not done", "لم تتم", "x", "-"]:
-                            done_services_set.add(col)
-                            service_stats["service_done_counts"][col] = service_stats["service_done_counts"].get(col, 0) + 1
-                            service_stats["total_done_services"] += 1
-
-                current_date = str(row.get("Date", "")).strip() if pd.notna(row.get("Date")) else "-"
-                current_tones = str(row.get("Tones", "")).strip() if pd.notna(row.get("Tones")) else "-"
-                servised_by_value = get_servised_by_value(row)
-                images_value = get_images_value(row)
-                
-                done_services = sorted(list(done_services_set))
-                done_norm = [normalize_name(c) for c in done_services]
-                
-                service_stats["by_slice"][slice_key]["done"].extend(done_services)
-                service_stats["by_slice"][slice_key]["total_done"] += len(done_services)
-                
-                not_done = []
-                for needed_part, needed_norm_part in zip(needed_parts, needed_norm):
-                    if needed_norm_part not in done_norm:
-                        not_done.append(needed_part)
-                
-                service_stats["by_slice"][slice_key]["not_done"].extend(not_done)
-
-                all_results.append({
-                    "Card Number": card_num,
-                    "Min_Tons": slice_min,
-                    "Max_Tons": slice_max,
-                    "Service Needed": " + ".join(needed_parts) if needed_parts else "-",
-                    "Service Done": ", ".join(done_services) if done_services else "-",
-                    "Service Didn't Done": ", ".join(not_done) if not_done else "-",
-                    "Tones": current_tones,
-                    "Servised by": servised_by_value,
-                    "Date": current_date,
-                    "Images": images_value if images_value else "-"
-                })
-        else:
-            all_results.append({
-                "Card Number": card_num,
-                "Min_Tons": slice_min,
-                "Max_Tons": slice_max,
-                "Service Needed": " + ".join(needed_parts) if needed_parts else "-",
-                "Service Done": "-",
-                "Service Didn't Done": ", ".join(needed_parts) if needed_parts else "-",
-                "Tones": "-",
-                "Servised by": "-",
-                "Date": "-",
-                "Images": "-"
-            })
-            service_stats["by_slice"][slice_key]["not_done"] = needed_parts.copy()
-
-    result_df = pd.DataFrame(all_results).dropna(how="all").reset_index(drop=True)
-
-    st.markdown("### 📋 نتائج فحص السيرفيس")
-    if not result_df.empty:
-        st.dataframe(result_df.style.apply(style_table, axis=1), use_container_width=True)
-        show_service_statistics(service_stats, result_df)
-        if "Images" in result_df.columns:
-            for idx, row in result_df.iterrows():
-                images_value = row.get("Images", "")
-                if images_value and images_value != "-":
-                    display_images(images_value, f"📷 صور للحدث #{idx+1}")
-        buffer = io.BytesIO()
-        result_df.to_excel(buffer, index=False, engine="openpyxl")
-        st.download_button(
-            label="💾 حفظ النتائج كـ Excel",
-            data=buffer.getvalue(),
-            file_name=f"Service_Report_Card{card_num}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("ℹ️ لا توجد خدمات مسجلة لهذه الماكينة.")
-
-def show_service_statistics(service_stats, result_df):
-    """عرض الإحصائيات والنسب المئوية لفحص السيرفيس"""
-    st.markdown("---")
-    st.markdown("### 📊 الإحصائيات والنسب المئوية")
+    old_tons = df.loc[mask, "Current_Tons"].values[0]
+    df.loc[mask, "Current_Tons"] = new_tons
+    df.loc[mask, "Last_Update"] = datetime.now()
+    df.loc[mask, "Last_Tons_Recorded"] = new_tons
+    sheets_edit["MachineData"] = df
     
-    if service_stats["total_needed_services"] == 0:
-        st.info("ℹ️ لا توجد خدمات مطلوبة في النطاق المحدد.")
+    # التحقق من الوصول إلى نطاقات جديدة وإصدار إشعارات
+    check_and_notify_new_slices(sheets_edit, card_num, old_tons, new_tons, performed_by)
+    
+    sheets_edit = auto_save_to_github(sheets_edit, f"تحديث أطنان ماكينة {card_num} إلى {new_tons}")
+    return sheets_edit
+
+def get_service_plan(sheets_edit):
+    """استرجاع خطة الخدمات من شيت ServicePlan"""
+    if "ServicePlan" not in sheets_edit:
+        st.error("❌ لا يوجد شيت ServicePlan في الملف")
+        return pd.DataFrame()
+    df = sheets_edit["ServicePlan"].copy()
+    required_cols = ["Min_Tones", "Max_Tones", "Service"]
+    for col in required_cols:
+        if col not in df.columns:
+            st.error(f"❌ شيت ServicePlan يفتقد العمود {col}")
+            return pd.DataFrame()
+    # تنظيف البيانات
+    df["Min_Tones"] = pd.to_numeric(df["Min_Tones"], errors='coerce')
+    df["Max_Tones"] = pd.to_numeric(df["Max_Tones"], errors='coerce')
+    df = df.dropna(subset=["Min_Tones", "Max_Tones"])
+    return df
+
+def get_executed_services(sheets_edit, card_num, slice_min=None, slice_max=None):
+    """استرجاع الخدمات المنفذة مسبقاً لنطاق معين"""
+    if "ServiceLog" not in sheets_edit:
+        return []
+    df = sheets_edit["ServiceLog"]
+    if df.empty:
+        return []
+    mask = df["Card_Number"] == card_num
+    if slice_min is not None and slice_max is not None:
+        mask &= (df["Slice_Min_Tons"] == slice_min) & (df["Slice_Max_Tons"] == slice_max)
+    executed = df[mask]["Service_Name"].tolist()
+    return executed
+
+def get_services_for_slice(sheets_edit, slice_min, slice_max):
+    """استرجاع الخدمات المطلوبة لنطاق معين من ServicePlan"""
+    service_plan = get_service_plan(sheets_edit)
+    if service_plan.empty:
+        return []
+    slice_row = service_plan[(service_plan["Min_Tones"] == slice_min) & (service_plan["Max_Tones"] == slice_max)]
+    if slice_row.empty:
+        return []
+    needed_str = slice_row.iloc[0]["Service"]
+    return split_needed_services(needed_str)
+
+def check_and_notify_new_slices(sheets_edit, card_num, old_tons, new_tons, performed_by=None):
+    """عند زيادة الأطنان، اكتشاف النطاقات الجديدة التي تم تجاوزها وإصدار إشعارات"""
+    service_plan = get_service_plan(sheets_edit)
+    if service_plan.empty:
         return
     
-    completion_rate = (service_stats["total_done_services"] / service_stats["total_needed_services"]) * 100 if service_stats["total_needed_services"] > 0 else 0
-    completion_rate = max(0, min(100, completion_rate))
+    # تحديد النطاقات التي كانت أقل أو تساوي old_tons والتي أصبحت أكبر من old_tons وأقل من أو تساوي new_tons
+    new_slices = []
+    for _, row in service_plan.iterrows():
+        slice_min = row["Min_Tones"]
+        slice_max = row["Max_Tones"]
+        # إذا كان النطاق لم يتم تجاوزه سابقاً (slice_max > old_tons) وأصبح ضمن الأطنان الجديدة (slice_min <= new_tons)
+        if slice_max > old_tons and slice_min <= new_tons:
+            # التحقق من أن هذا النطاق لم يتم تنفيذ خدماته من قبل (يمكن تسجيله مرة واحدة)
+            executed = get_executed_services(sheets_edit, card_num, slice_min, slice_max)
+            required = get_services_for_slice(sheets_edit, slice_min, slice_max)
+            # إذا كان هناك خدمات مطلوبة ولم يتم تنفيذها كلها
+            if required and set(executed) != set(required):
+                new_slices.append((slice_min, slice_max, required, executed))
     
-    col1, col2, col3, col4 = st.columns(4)
+    if new_slices:
+        st.session_state["pending_services_notified"] = True
+        with st.expander(f"🔔 **إشعار: خدمات جديدة مطلوبة للماكينة {card_num}**", expanded=True):
+            for slice_min, slice_max, required, executed in new_slices:
+                st.warning(f"**النطاق {slice_min} - {slice_max} طن**")
+                not_done = [s for s in required if s not in executed]
+                if not_done:
+                    st.markdown(f"📋 الخدمات المطلوبة: {', '.join(required)}")
+                    st.markdown(f"✅ المنفذة: {', '.join(executed) if executed else 'لا شيء'}")
+                    st.markdown(f"⏳ المتبقية: {', '.join(not_done)}")
+                    # إمكانية تسجيل الخدمات من هنا (سيتم في الواجهة)
+                    st.session_state[f"pending_slice_{card_num}_{slice_min}_{slice_max}"] = not_done
+        st.info("📌 يمكنك تسجيل تنفيذ هذه الخدمات من تبويب **الصيانة الوقائية** أسفل قسم 'تسجيل خدمات منفذة'.")
+
+def get_current_slice_info(sheets_edit, card_num, current_tons):
+    """الحصول على النطاق الحالي للأطنان"""
+    service_plan = get_service_plan(sheets_edit)
+    if service_plan.empty:
+        return None, None, [], []
+    for _, row in service_plan.iterrows():
+        if row["Min_Tones"] <= current_tons <= row["Max_Tones"]:
+            slice_min = row["Min_Tones"]
+            slice_max = row["Max_Tones"]
+            required = split_needed_services(row["Service"])
+            executed = get_executed_services(sheets_edit, card_num, slice_min, slice_max)
+            return slice_min, slice_max, required, executed
+    return None, None, [], []
+
+def record_service_execution(sheets_edit, card_num, slice_min, slice_max, service_name, performed_by, notes=""):
+    """تسجيل تنفيذ خدمة في ServiceLog"""
+    if "ServiceLog" not in sheets_edit:
+        sheets_edit = initialize_service_log_sheet(sheets_edit)
+    df = sheets_edit["ServiceLog"]
+    new_row = pd.DataFrame([{
+        "Card_Number": card_num,
+        "Slice_Min_Tons": slice_min,
+        "Slice_Max_Tons": slice_max,
+        "Service_Name": service_name,
+        "Execution_Date": datetime.now(),
+        "Performed_By": performed_by,
+        "Notes": notes
+    }])
+    df = pd.concat([df, new_row], ignore_index=True)
+    sheets_edit["ServiceLog"] = df
+    sheets_edit = auto_save_to_github(sheets_edit, f"تسجيل خدمة {service_name} للماكينة {card_num} (نطاق {slice_min}-{slice_max})")
+    return sheets_edit
+
+def update_machine_speed(sheets_edit, card_num, new_speed_tons_per_hour):
+    """تحديث سرعة الإنتاج للماكينة"""
+    if "MachineData" not in sheets_edit:
+        sheets_edit = initialize_machine_data_sheet(sheets_edit)
+    df = sheets_edit["MachineData"]
+    mask = df["Card_Number"] == card_num
+    if mask.any():
+        df.loc[mask, "Production_Speed_tons_per_hour"] = new_speed_tons_per_hour
+    else:
+        new_row = pd.DataFrame([{
+            "Card_Number": card_num,
+            "Current_Tons": 0.0,
+            "Production_Speed_tons_per_hour": new_speed_tons_per_hour,
+            "Last_Update": datetime.now(),
+            "Last_Tons_Recorded": 0.0
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+    sheets_edit["MachineData"] = df
+    sheets_edit = auto_save_to_github(sheets_edit, f"تحديث سرعة ماكينة {card_num} إلى {new_speed_tons_per_hour} طن/ساعة")
+    return sheets_edit
+
+def auto_update_tons_based_on_time(sheets_edit, card_num):
+    """تحديث الأطنان تلقائياً بناءً على الوقت المنقضي وسرعة الإنتاج"""
+    sheets_edit, machine_data = get_machine_data(sheets_edit, card_num)
+    last_update = machine_data.get("Last_Update")
+    if last_update is None:
+        return sheets_edit, machine_data.get("Current_Tons", 0.0)
+    if isinstance(last_update, str):
+        last_update = datetime.fromisoformat(last_update)
+    now = datetime.now()
+    delta_hours = (now - last_update).total_seconds() / 3600.0
+    speed = machine_data.get("Production_Speed_tons_per_hour", 0.08)
+    additional_tons = delta_hours * speed
+    new_tons = machine_data.get("Current_Tons", 0.0) + additional_tons
+    sheets_edit = update_machine_tons(sheets_edit, card_num, new_tons, performed_by="Auto")
+    return sheets_edit, new_tons
+
+def preventive_maintenance_tab(sheets_edit):
+    """تبويب الصيانة الوقائية الجديد"""
+    st.header("🛠 الصيانة الوقائية - العداد التصاعدي والإشعارات")
+    st.info("هنا يمكنك تتبع الأطنان الحالية لكل ماكينة، تحديثها تلقائياً بناءً على سرعة الإنتاج، وتسجيل الخدمات المطلوبة عند الوصول إلى نطاقات جديدة.")
+    
+    if sheets_edit is None:
+        st.warning("لا توجد بيانات. قم بتحديث الملف من GitHub أولاً.")
+        return sheets_edit
+    
+    # التأكد من وجود الأوراق اللازمة
+    sheets_edit = initialize_machine_data_sheet(sheets_edit)
+    sheets_edit = initialize_service_log_sheet(sheets_edit)
+    
+    # قائمة الماكينات
+    machine_numbers = get_all_machine_numbers(sheets_edit)
+    if not machine_numbers:
+        st.warning("⚠ لم يتم العثور على أي ماكينة. تأكد من وجود شيتات CardX_Services في ملف Excel.")
+        return sheets_edit
+    
+    selected_card = st.selectbox("🔢 اختر رقم الماكينة:", machine_numbers, key="pm_card_select")
+    
+    # استرجاع بيانات الماكينة
+    sheets_edit, machine_data = get_machine_data(sheets_edit, selected_card)
+    current_tons = machine_data.get("Current_Tons", 0.0)
+    speed = machine_data.get("Production_Speed_tons_per_hour", 0.08)
+    last_update = machine_data.get("Last_Update")
+    
+    # عرض المعلومات الحالية
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📈 نسبة الإنجاز العامة", f"{completion_rate:.1f}%", f"{service_stats['total_done_services']}/{service_stats['total_needed_services']}")
+        st.metric("📊 الأطنان الحالية", f"{current_tons:.2f} طن")
     with col2:
-        st.metric("🔢 عدد الخدمات المطلوبة", service_stats["total_needed_services"])
+        st.metric("⚡ سرعة الإنتاج", f"{speed*1000:.0f} كجم/ساعة  ({speed:.3f} طن/ساعة)")
     with col3:
-        st.metric("✅ الخدمات المنفذة", service_stats["total_done_services"])
-    with col4:
-        remaining = service_stats["total_needed_services"] - service_stats["total_done_services"]
-        st.metric("⏳ الخدمات المتبقية", remaining)
+        if last_update:
+            if isinstance(last_update, str):
+                last_update = datetime.fromisoformat(last_update)
+            st.metric("🕒 آخر تحديث", last_update.strftime("%Y-%m-%d %H:%M"))
+        else:
+            st.metric("🕒 آخر تحديث", "غير معروف")
     
-    st.markdown("---")
-    stat_tabs = st.tabs(["📝 إحصائيات الخدمات", "📋 توزيع الخدمات", "📊 حسب الشريحة"])
+    # تحديث العداد
+    st.subheader("🔄 تحديث الأطنان")
+    update_method = st.radio("طريقة التحديث:", ["تحديث تلقائي (حسب الوقت المنقضي)", "إدخال يدوي", "إضافة كمية محددة"], horizontal=True, key="update_method")
     
-    with stat_tabs[0]:
-        st.markdown("#### 📝 إحصائيات مفصلة لكل خدمة")
-        stat_data = []
-        all_services = set(service_stats["service_counts"].keys()).union(set(service_stats["service_done_counts"].keys()))
-        for service in sorted(all_services):
-            needed_count = service_stats["service_counts"].get(service, 0)
-            done_count = service_stats["service_done_counts"].get(service, 0)
-            if needed_count > 0:
-                completion_rate_service = (done_count / needed_count) * 100
-                completion_rate_service = max(0, min(100, completion_rate_service))
+    if update_method == "تحديث تلقائي (حسب الوقت المنقضي)":
+        if st.button("📈 تحديث العداد تلقائياً", key="auto_update_btn"):
+            with st.spinner("جاري حساب الإنتاج منذ آخر تحديث..."):
+                sheets_edit, new_tons = auto_update_tons_based_on_time(sheets_edit, selected_card)
+                st.success(f"✅ تم تحديث الأطنان إلى {new_tons:.2f} طن (إضافة {new_tons - current_tons:.2f} طن)")
+                st.rerun()
+    
+    elif update_method == "إدخال يدوي":
+        new_manual_tons = st.number_input("أدخل الأطنان الحالية:", min_value=0.0, value=float(current_tons), step=100.0, format="%.2f", key="manual_tons")
+        if st.button("💾 تحديث يدوي", key="manual_update_btn"):
+            if new_manual_tons != current_tons:
+                sheets_edit = update_machine_tons(sheets_edit, selected_card, new_manual_tons, performed_by=st.session_state.get("username", "manual"))
+                st.success(f"✅ تم تحديث الأطنان إلى {new_manual_tons:.2f} طن")
+                st.rerun()
             else:
-                completion_rate_service = 0
-            stat_data.append({
-                "الخدمة": service,
-                "مطلوبة": needed_count,
-                "منفذة": done_count,
-                "متبقية": needed_count - done_count,
-                "نسبة الإنجاز": f"{completion_rate_service:.1f}%",
-                "حالة": "✅ ممتاز" if completion_rate_service >= 90 else "🟢 جيد" if completion_rate_service >= 70 else "🟡 متوسط" if completion_rate_service >= 50 else "🔴 ضعيف"
-            })
-        if stat_data:
-            stat_df = pd.DataFrame(stat_data)
-            st.dataframe(stat_df, use_container_width=True, height=400)
-        else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للخدمات.")
+                st.info("لم يتم تغيير القيمة.")
     
-    with stat_tabs[1]:
-        st.markdown("#### 📋 توزيع الخدمات")
-        if service_stats["service_counts"]:
-            try:
-                import plotly.express as px
-                plot_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    plot_data.append({"الخدمة": service, "النوع": "مطلوبة", "العدد": needed_count})
-                    plot_data.append({"الخدمة": service, "النوع": "منفذة", "العدد": done_count})
-                plot_df = pd.DataFrame(plot_data)
-                fig = px.bar(plot_df, x="الخدمة", y="العدد", color="النوع", barmode="group", title="توزيع الخدمات المطلوبة والمنفذة", color_discrete_map={"مطلوبة": "#FF6B6B", "منفذة": "#4ECDC4"})
-                fig.update_layout(xaxis_title="الخدمة", yaxis_title="العدد", showlegend=True, height=500)
-                st.plotly_chart(fig, use_container_width=True)
-                fig2 = px.pie(names=["✅ منفذة", "⏳ غير منفذة"], values=[service_stats["total_done_services"], service_stats["total_needed_services"] - service_stats["total_done_services"]], title="نسبة الإنجاز العامة", color_discrete_sequence=["#4ECDC4", "#FF6B6B"])
-                fig2.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig2, use_container_width=True)
-                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                if 0 <= completion_rate <= 100:
-                    st.progress(completion_rate / 100)
-                else:
-                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
-            except ImportError:
-                st.info("📊 عرض البيانات باستخدام الرسوم البيانية المضمنة في Streamlit")
-                dist_data = []
-                for service, needed_count in service_stats["service_counts"].items():
-                    done_count = service_stats["service_done_counts"].get(service, 0)
-                    if needed_count > 0:
-                        completion_rate_service = (done_count / needed_count) * 100
-                        completion_rate_service = max(0, min(100, completion_rate_service))
-                    else:
-                        completion_rate_service = 0
-                    dist_data.append({"الخدمة": service, "مطلوبة": needed_count, "منفذة": done_count, "نسبة": f"{completion_rate_service:.1f}%"})
-                if dist_data:
-                    dist_df = pd.DataFrame(dist_data).sort_values("نسبة", ascending=False)
-                    st.dataframe(dist_df, use_container_width=True, height=300)
-                chart_data = pd.DataFrame({
-                    "الخدمة": list(service_stats["service_counts"].keys()),
-                    "مطلوبة": list(service_stats["service_counts"].values()),
-                    "منفذة": [service_stats["service_done_counts"].get(service, 0) for service in service_stats["service_counts"].keys()]
-                })
-                if len(chart_data) > 10:
-                    chart_data = chart_data.nlargest(10, "مطلوبة")
-                st.bar_chart(chart_data.set_index("الخدمة"), height=400)
-                st.markdown(f"**📈 نسبة الإنجاز العامة:** {completion_rate:.1f}%")
-                if 0 <= completion_rate <= 100:
-                    st.progress(completion_rate / 100)
-                else:
-                    st.info("ℹ️ لا يمكن عرض شريط التقدم بسبب قيمة النسبة غير الصحيحة")
-        else:
-            st.info("ℹ️ لا توجد بيانات كافية لعرض المخططات.")
+    else:  # إضافة كمية محددة
+        additional_tons = st.number_input("كمية إضافية (طن):", min_value=0.0, step=10.0, format="%.2f", key="add_tons")
+        if st.button("➕ إضافة كمية", key="add_tons_btn"):
+            new_tons = current_tons + additional_tons
+            sheets_edit = update_machine_tons(sheets_edit, selected_card, new_tons, performed_by=st.session_state.get("username", "add"))
+            st.success(f"✅ تمت إضافة {additional_tons:.2f} طن -> الإجمالي {new_tons:.2f} طن")
+            st.rerun()
     
-    with stat_tabs[2]:
-        st.markdown("#### 📊 الإحصائيات حسب الشريحة")
-        slice_stats_data = []
-        for slice_key, slice_data in service_stats["by_slice"].items():
-            if slice_data["total_needed"] > 0:
-                completion_rate_slice = (slice_data["total_done"] / slice_data["total_needed"]) * 100
-                completion_rate_slice = max(0, min(100, completion_rate_slice))
+    # تعديل سرعة الإنتاج
+    st.subheader("⚙ تعديل سرعة الإنتاج")
+    new_speed_kg = st.number_input("سرعة الإنتاج (كجم/ساعة):", min_value=0, value=int(speed*1000), step=10, key="speed_kg")
+    new_speed_tons = new_speed_kg / 1000.0
+    if st.button("💾 حفظ السرعة", key="save_speed"):
+        sheets_edit = update_machine_speed(sheets_edit, selected_card, new_speed_tons)
+        st.success(f"✅ تم تحديث سرعة الإنتاج إلى {new_speed_kg} كجم/ساعة")
+        st.rerun()
+    
+    # عرض النطاق الحالي والخدمات
+    st.subheader("📌 النطاق الحالي والخدمات المطلوبة")
+    slice_min, slice_max, required_services, executed_services = get_current_slice_info(sheets_edit, selected_card, current_tons)
+    if slice_min is not None:
+        st.info(f"**النطاق الحالي:** {slice_min} - {slice_max} طن")
+        if required_services:
+            st.markdown("**📋 الخدمات المطلوبة في هذا النطاق:**")
+            for svc in required_services:
+                if svc in executed_services:
+                    st.success(f"✅ {svc} (تم تنفيذه)")
+                else:
+                    st.warning(f"⚠️ {svc} (لم ينفذ بعد)")
+        else:
+            st.success("✅ لا توجد خدمات مطلوبة في هذا النطاق.")
+    else:
+        st.warning("⚠ لم يتم العثور على نطاق يتطابق مع الأطنان الحالية. تأكد من وجود خطة خدمة مناسبة.")
+    
+    # تسجيل خدمة جديدة
+    st.subheader("📝 تسجيل خدمة منفذة")
+    # الحصول على جميع الخدمات المطلوبة في النطاق الحالي والتي لم تنفذ بعد
+    pending_services = []
+    if slice_min is not None and required_services:
+        for svc in required_services:
+            if svc not in executed_services:
+                pending_services.append(svc)
+    
+    if pending_services:
+        service_to_record = st.selectbox("اختر الخدمة التي تم تنفيذها:", pending_services, key="record_service_select")
+        performed_by = st.text_input("اسم الفني المنفذ:", value=st.session_state.get("username", ""), key="record_performed_by")
+        notes = st.text_area("ملاحظات (اختياري):", key="record_notes")
+        if st.button("✅ تسجيل تنفيذ الخدمة", key="record_service_btn"):
+            if not performed_by:
+                st.error("❌ الرجاء إدخال اسم الفني المنفذ.")
             else:
-                completion_rate_slice = 0
-            slice_stats_data.append({
-                "الشريحة": slice_key,
-                "الخدمات المطلوبة": slice_data["total_needed"],
-                "الخدمات المنفذة": slice_data["total_done"],
-                "الخدمات المتبقية": slice_data["total_needed"] - slice_data["total_done"],
-                "نسبة الإنجاز": f"{completion_rate_slice:.1f}%",
-                "حالة الشريحة": "✅ ممتازة" if completion_rate_slice >= 90 else "🟢 جيدة" if completion_rate_slice >= 70 else "🟡 متوسطة" if completion_rate_slice >= 50 else "🔴 ضعيفة"
-            })
-        if slice_stats_data:
-            slice_stats_df = pd.DataFrame(slice_stats_data)
-            st.dataframe(slice_stats_df, use_container_width=True, height=400)
-            try:
-                import plotly.graph_objects as go
-                slice_ranges = []
-                completion_rates = []
-                for slice_item in slice_stats_data:
-                    slice_key = slice_item["الشريحة"]
-                    slice_range = slice_key.split("-")
-                    if len(slice_range) == 2:
-                        try:
-                            mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
-                            slice_ranges.append(mid_point)
-                            rate_text = slice_item["نسبة الإنجاز"]
-                            rate_value = float(rate_text.replace("%", "").strip())
-                            rate_value = max(0, min(100, rate_value))
-                            completion_rates.append(rate_value)
-                        except:
-                            continue
-                if slice_ranges and completion_rates:
-                    fig3 = go.Figure()
-                    fig3.add_trace(go.Scatter(x=slice_ranges, y=completion_rates, mode='lines+markers', name='نسبة الإنجاز', line=dict(color='#4ECDC4', width=3), marker=dict(size=10, color='#FF6B6B')))
-                    fig3.update_layout(title="نسبة الإنجاز حسب نطاق الأطنان", xaxis_title="نطاق الأطنان (منتصف الشريحة)", yaxis_title="نسبة الإنجاز (%)", height=400, showlegend=True)
-                    st.plotly_chart(fig3, use_container_width=True)
-            except ImportError:
-                if slice_stats_data:
-                    chart_data = []
-                    for slice_item in slice_stats_data:
-                        slice_key = slice_item["الشريحة"]
-                        slice_range = slice_key.split("-")
-                        if len(slice_range) == 2:
-                            try:
-                                mid_point = (int(slice_range[0]) + int(slice_range[1])) / 2
-                                rate_text = slice_item["نسبة الإنجاز"]
-                                rate_value = float(rate_text.replace("%", "").strip())
-                                rate_value = max(0, min(100, rate_value))
-                                chart_data.append({"نطاق الأطنان": mid_point, "نسبة الإنجاز": rate_value})
-                            except:
-                                continue
-                    if chart_data:
-                        chart_df = pd.DataFrame(chart_data).sort_values("نطاق الأطنان")
-                        st.line_chart(chart_df.set_index("نطاق الأطنان"), height=400)
+                sheets_edit = record_service_execution(sheets_edit, selected_card, slice_min, slice_max, service_to_record, performed_by, notes)
+                st.success(f"✅ تم تسجيل تنفيذ الخدمة '{service_to_record}'")
+                st.rerun()
+    else:
+        st.info("ℹ️ لا توجد خدمات معلقة في النطاق الحالي.")
+    
+    # عرض سجل الخدمات السابقة لهذه الماكينة
+    st.subheader("📜 سجل الخدمات المنفذة (لكل النطاقات)")
+    if "ServiceLog" in sheets_edit:
+        log_df = sheets_edit["ServiceLog"]
+        if not log_df.empty and "Card_Number" in log_df.columns:
+            card_log = log_df[log_df["Card_Number"] == selected_card].copy()
+            if not card_log.empty:
+                # تحويل التواريخ للعرض
+                if "Execution_Date" in card_log.columns:
+                    card_log["Execution_Date"] = pd.to_datetime(card_log["Execution_Date"]).dt.strftime("%Y-%m-%d %H:%M")
+                st.dataframe(card_log[["Slice_Min_Tons", "Slice_Max_Tons", "Service_Name", "Execution_Date", "Performed_By", "Notes"]], use_container_width=True)
+            else:
+                st.info("لا توجد خدمات مسجلة لهذه الماكينة بعد.")
         else:
-            st.info("ℹ️ لا توجد بيانات إحصائية للشرائح.")
+            st.info("لا توجد خدمات مسجلة بعد.")
+    else:
+        st.info("لا توجد خدمات مسجلة بعد.")
+    
+    return sheets_edit
 
 # -------------------------------
 # 🖥 دالة تعديل الشيت مع زر حفظ يدوي
@@ -1049,7 +993,8 @@ def edit_sheet_with_save_button(sheets_edit):
                     st.session_state.unsaved_changes[sheet_name] = False
                     st.success(f"✅ تم حفظ التغييرات في شيت {sheet_name} بنجاح!")
                     st.session_state.original_sheets[sheet_name] = edited_df.copy()
-                    import time; time.sleep(1); st.rerun()
+                    time.sleep(1)
+                    st.rerun()
                 else:
                     st.error("❌ فشل حفظ التغييرات!")
         with col2:
@@ -1162,11 +1107,15 @@ user_role = st.session_state.get("user_role", "viewer")
 user_permissions = st.session_state.get("user_permissions", ["view"])
 permissions = get_user_permissions(user_role, user_permissions)
 
+# بناء التبويبات حسب الصلاحيات
+tabs_list = ["📊 فحص السيرفيس"]
 if permissions["can_edit"]:
-    tabs = st.tabs(["📊 فحص السيرفيس", "🛠 تعديل وإدارة البيانات"])
-else:
-    tabs = st.tabs(["📊 فحص السيرفيس"])
+    tabs_list.append("🛠 تعديل وإدارة البيانات")
+    tabs_list.append("🛠 الصيانة الوقائية")  # التبويب الجديد
 
+tabs = st.tabs(tabs_list)
+
+# تبويب فحص السيرفيس (موجود مسبقاً)
 with tabs[0]:
     st.header("📊 فحص السيرفيس")
     if all_sheets is None:
@@ -1182,6 +1131,7 @@ with tabs[0]:
         if st.session_state.get("show_service_results", False):
             check_service_status(card_num, current_tons, all_sheets)
 
+# تبويب تعديل البيانات (إذا كان مسموحاً)
 if permissions["can_edit"] and len(tabs) > 1:
     with tabs[1]:
         st.header("🛠 تعديل وإدارة البيانات")
@@ -1189,13 +1139,11 @@ if permissions["can_edit"] and len(tabs) > 1:
             st.warning("❗ الملف المحلي غير موجود. اضغط تحديث من GitHub في الشريط الجانبي أولًا.")
         else:
             tab1, tab2, tab3 = st.tabs(["عرض وتعديل شيت", "إضافة صف جديد", "إضافة عمود جديد"])
-            
             with tab1:
                 if st.session_state.get("save_all_requested", False):
                     st.info("💾 جاري حفظ جميع التغييرات...")
                     st.session_state["save_all_requested"] = False
                 sheets_edit = edit_sheet_with_save_button(sheets_edit)
-            
             with tab2:
                 st.subheader("➕ إضافة صف جديد")
                 sheet_name_add = st.selectbox("اختر الشيت لإضافة صف:", list(sheets_edit.keys()), key="add_sheet")
@@ -1220,7 +1168,6 @@ if permissions["can_edit"] and len(tabs) > 1:
                 with col_btn2:
                     if st.button("🗑 مسح الحقول", key=f"clear_{sheet_name_add}"):
                         st.rerun()
-            
             with tab3:
                 st.subheader("🆕 إضافة عمود جديد")
                 sheet_name_col = st.selectbox("اختر الشيت لإضافة عمود:", list(sheets_edit.keys()), key="add_col_sheet")
@@ -1243,3 +1190,8 @@ if permissions["can_edit"] and len(tabs) > 1:
                 with col_btn2:
                     if st.button("🗑 مسح", key=f"clear_col_{sheet_name_col}"):
                         st.rerun()
+
+# تبويب الصيانة الوقائية الجديد (إذا كان مسموحاً بالتحرير)
+if permissions["can_edit"] and len(tabs) > 2:
+    with tabs[2]:
+        sheets_edit = preventive_maintenance_tab(sheets_edit)
